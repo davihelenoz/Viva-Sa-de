@@ -1,0 +1,24 @@
+// Execução: node tests/tests.js
+const VS = require('../js/logic.js');
+const fs = require('fs'), vm = require('vm');
+const ctx = {}; vm.runInNewContext(fs.readFileSync(__dirname + '/../js/data.js', 'utf8') + ';this.Q=Q;this.CAMP=CAMP;', ctx);
+const mem = () => { const m = {}; return { getItem: k => (k in m ? m[k] : null), setItem: (k, v) => { m[k] = v; } }; };
+let ok = 0, fail = 0;
+const t = (n, f) => { try { f(); console.log('PASSOU  ' + n); ok++; } catch (e) { console.log('FALHOU  ' + n + ' -> ' + e.message); fail++; } };
+const eq = (a, b) => { if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(JSON.stringify(a) + ' != ' + JSON.stringify(b)); };
+const correct = ctx.Q.map(q => q[2]);
+t('quiz tem ao menos 12 perguntas', () => eq(ctx.Q.length >= 12, true));
+t('cada pergunta tem 4 alternativas e gabarito válido', () => eq(ctx.Q.every(q => q[1].length === 4 && q[2] >= 0 && q[2] < 4), true));
+t('perguntas divididas entre as duas campanhas (6/6)', () => eq(ctx.Q.filter(q => q[4] === 'rosa').length, 6));
+t('pontuação com todas corretas = 100%', () => eq(VS.score(correct, correct).pct, 100));
+t('pontuação com todas erradas = 0 acertos', () => eq(VS.score(correct.map(c => (c + 1) % 4), correct).hits, 0));
+t('pontuação parcial (6 de 12 = 50%)', () => eq(VS.score(correct.map((c, i) => i < 6 ? c : (c + 1) % 4), correct).pct, 50));
+t('bloqueia avanço sem resposta', () => eq(VS.canAdvance([null], 0), false));
+t('permite avanço com resposta 0', () => eq(VS.canAdvance([0], 0), true));
+t('feedback varia conforme desempenho', () => eq(new Set([VS.feedback(90), VS.feedback(60), VS.feedback(10)]).size, 3));
+t('salva e recupera resultado', () => { const s = mem(); VS.save(s, { hits: 5, total: 12 }); eq(VS.load(s)[0].hits, 5); });
+t('histórico mantém o mais recente primeiro', () => { const s = mem(); VS.save(s, { hits: 1 }); VS.save(s, { hits: 2 }); eq(VS.load(s).map(r => r.hits), [2, 1]); });
+t('exclui o histórico', () => { const s = mem(); VS.save(s, { hits: 1 }); VS.clear(s); eq(VS.load(s), []); });
+t('JSON corrompido não quebra a leitura', () => { const s = mem(); s.setItem('vs:hist', '{x'); eq(VS.load(s), []); });
+t('campanhas têm seções e mitos', () => eq(['rosa', 'azul'].every(k => ctx.CAMP[k].secs.length >= 5 && ctx.CAMP[k].mitos.length >= 3), true));
+console.log(`\n${ok} passaram, ${fail} falharam`); process.exit(fail ? 1 : 0);
